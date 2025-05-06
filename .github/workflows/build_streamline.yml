@@ -16,14 +16,9 @@ jobs:
         with:
           lfs: true # Streamline uses Git LFS for some large files
 
-      - name: Set up MSVC (Visual Studio C++ toolset)
-        uses: microsoft/setup-msvc@v2.2.0
-        with:
-         vs-version: 'latest'
-         as-developer-command-prompt: true
-          # This action sets up the Developer Command Prompt environment.
-          # CMake and Ninja (if bundled with VS) should be available in PATH.
-          # vs-version: 'latest' # You can specify a VS version or let it pick the latest.
+      # The 'Set up MSVC' step has been removed.
+      # The windows-latest runner should have Visual Studio, CMake, and Ninja available.
+      # CMake is generally able to auto-detect the MSVC toolchain.
 
       - name: Download Vulkan SDK
         shell: pwsh # Using PowerShell for scripting consistency
@@ -36,14 +31,6 @@ jobs:
           Write-Host "Downloading Vulkan SDK version $VULKAN_SDK_VERSION from $VULKAN_SDK_URL..."
           Invoke-WebRequest -Uri $VULKAN_SDK_URL -OutFile $VULKAN_SDK_EXE_FILENAME
           Write-Host "Vulkan SDK installer downloaded as $VULKAN_SDK_EXE_FILENAME."
-          
-          # Optional: Add a SHA256 hash check for the downloaded installer for enhanced security
-          # $EXPECTED_HASH = "YOUR_EXPECTED_SHA256_HASH_HERE"
-          # $DOWNLOADED_HASH = (Get-FileHash $VULKAN_SDK_EXE_FILENAME -Algorithm SHA256).Hash
-          # if ($DOWNLOADED_HASH -ne $EXPECTED_HASH) {
-          #   throw "Vulkan SDK installer hash mismatch! Expected $EXPECTED_HASH but got $DOWNLOADED_HASH."
-          # }
-          # Write-Host "Vulkan SDK installer hash verified."
 
       - name: Install Vulkan SDK
         shell: pwsh
@@ -55,7 +42,6 @@ jobs:
           $VULKAN_SDK_FULL_INSTALL_PATH = Join-Path $VULKAN_SDK_BASE_INSTALL_PATH $VULKAN_SDK_VERSION_PATH_COMPONENT
 
           Write-Host "Installing Vulkan SDK silently..."
-          # The /S argument performs a silent installation. Start-Process with -Wait ensures completion.
           Start-Process -FilePath ".\$VULKAN_SDK_EXE_FILENAME" -ArgumentList "/S" -Wait -NoNewWindow
           Write-Host "Vulkan SDK installation process completed."
 
@@ -83,7 +69,7 @@ jobs:
           Write-Host "Current VULKAN_SDK environment variable is: $env:VULKAN_SDK" # Verify VULKAN_SDK is available
           
           # CMake arguments based on Streamline's CI practices:
-          # -A x64: Target 64-bit architecture
+          # -A x64: Target 64-bit architecture (for Visual Studio generators primarily, Ninja uses compiler env)
           # -GNinja: Use the Ninja build system (generally faster)
           # -DCMAKE_BUILD_TYPE=Release: Build Release configuration
           # Streamline-specific flags for CI builds:
@@ -125,11 +111,6 @@ jobs:
           
           Write-Host "Copying built LIBs..."
           Get-ChildItem -Path "_build/output/Release/*.lib" | Copy-Item -Destination (Join-Path $ARTIFACT_STAGING_DIR "lib" "x64/") -Force
-          
-          # Optional: If PDBs (debug symbols) are generated and desired, copy them too.
-          # Note: DSL_SKIP_PROGRAMDB_AND_DISASSEMBLY_GENERATION=ON currently likely prevents PDB generation.
-          # Write-Host "Copying PDBs (if any)..."
-          # Get-ChildItem -Path "_build/output/Release/*.pdb" -ErrorAction SilentlyContinue | Copy-Item -Destination (Join-Path $ARTIFACT_STAGING_DIR "bin" "x64/") -Force
           
           Write-Host "Artifact preparation complete. Contents staged in '$ARTIFACT_STAGING_DIR'."
 
