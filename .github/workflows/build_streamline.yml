@@ -27,6 +27,8 @@ jobs:
       - name: Apply CMake patch to Streamline
         shell: pwsh
         run: |
+          # Ensure this line ($patchContent = @" ) and the closing "@ line below
+          # have THE EXACT SAME indentation in your YAML file.
           $patchContent = @"
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
@@ -38,7 +40,7 @@ jobs:
      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SL_COMMON_JSON} ${SL_IMGUI_JSON} ${SL_INTERPOSER_JSON} ${SL_REFLEX_JSON} ${SL_STREAMER_JSON} ${CMAKE_BINARY_DIR}/${CMAKE_VS_PLATFORM_NAME}
      DEPENDS sl.api
      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-"@
+"@ # <--- THIS LINE IS CRITICAL. No extra spaces before it. Same indentation as '$patchContent = @"' above.
           $patchContent | Set-Content -Path "streamline_cmake.patch" -Encoding UTF8
           # Apply the patch to CMakeLists.txt in the root of the checked-out repo
           git apply --verbose streamline_cmake.patch
@@ -47,8 +49,7 @@ jobs:
             exit 1
           }
           Remove-Item "streamline_cmake.patch"
-        working-directory: ${{ github.workspace }} # Ensure patch is created and applied in the repo root
-
+        working-directory: ${{ github.workspace }}
       - name: Set up CMake
         uses: jwlawson/actions-setup-cmake@v2 # [1, 17]
         with:
