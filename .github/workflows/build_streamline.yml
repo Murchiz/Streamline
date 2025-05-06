@@ -19,11 +19,10 @@ jobs:
         # If this workflow is in your fork of NVIDIA-RTX/Streamline,
         # it will check out your fork.
         # If you want to always build the official NVIDIA repo, uncomment and use:
-        # with:
-        #   repository: NVIDIA-RTX/Streamline
-        #   ref: main # or a specific tag/commit
         with:
-          submodules: 'recursive' # Streamline uses submodules
+           repository: NVIDIA-RTX/Streamline
+           ref: main # or a specific tag/commi
+           submodules: 'recursive' # Streamline uses submodules
 
       - name: Apply CMake patch to Streamline
         shell: pwsh
