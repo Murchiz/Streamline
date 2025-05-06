@@ -1,64 +1,140 @@
-name: Streamline Windows Build
+name: Build NVIDIA Streamline for Windows x64
 
 on:
+  workflow_dispatch: # Allows manual triggering from the Actions tab
   push:
-    branches: [ main, master ]
+    branches:
+      - main     # Adjust if your main branch is named differently (e.g., master)
+      # - master # Uncomment or use this if your main branch is 'master'
   pull_request:
-    branches: [ main, master ]
+    branches:
+      - main     # Adjust if your main branch is named differently
+      # - master # Uncomment or use this if your main branch is 'master'
 
 jobs:
-  build-streamline:
-    runs-on: windows-latest
+  build_streamline_windows:
+    name: Build Streamline (Windows x64 Release)
+    runs-on: windows-latest # Uses Windows Server 2022 by default, which includes Visual Studio 2022
+
     steps:
-    - name: Install Chocolatey
-      shell: pwsh
-      run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive' # Crucial for Streamline, fetches all submodules (e.g., NVIDIA Headers)
 
-    - name: Install Build Tools
-      shell: pwsh
-      run: |
-        choco install visualstudio2022-workload-vctools -y --params="--add Microsoft.VisualStudio.Component.VC.CMake.project --add Microsoft.VisualStudio.Component.Windows11SDK.22621"
-        choco install cmake -y --installargs 'ADD_CMAKE_TO_PATH=System'
-        choco install ninja -y
-        choco install cuda --version=12.3.0 -y --params="/InstallationType=Toolkit /NoNvidiaDriver"
+      - name: Set up MSVC developer command prompt
+        # This ensures the C++ compiler, linker, and other build tools are in the PATH.
+        # CMake typically finds Visual Studio automatically on windows-latest, but this makes the environment explicit.
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64 # Specify x64 architecture for the build
 
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Setup Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1.3 # Uses a tagged version of the action for stability
+        with:
+          vulkan-query-version: '1.3.243.0' # Specific version mentioned in Streamline docs, or use 'latest'
+          # Optional: Cache the SDK download to speed up subsequent runs
+          # vulkan-use-cache: 'true'
+        # This action sets the VULKAN_SDK environment variable and adds the SDK to the PATH.
 
-    - name: Cache CMake Build
-      uses: actions/cache@v3
-      with:
-        path: build
-        key: ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-cmake-
+      - name: Verify Vulkan SDK installation
+        run: |
+          echo "VULKAN_SDK is set to: $env:VULKAN_SDK"
+          if (-not $env:VULKAN_SDK -or (-not (Test-Path $env:VULKAN_SDK))) {
+            Write-Error "VULKAN_SDK is not correctly set or path does not exist."
+            exit 1
+          }
+          echo "Vulkan SDK version information (if vkvia.exe is found):"
+          if (Test-Path "$env:VULKAN_SDK\Bin\vkvia.exe") {
+            & "$env:VULKAN_SDK\Bin\vkvia.exe"
+          } else {
+            echo "vkvia.exe not found in SDK Bin, cannot display detailed version info here. SDK path seems valid though."
+          }
+        shell: pwsh
 
-    - name: Configure CMake
-      shell: pwsh
-      run: |
-        cmake -S . -B build -G Ninja `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DSL_WITH_TESTS=OFF `
-          -DSL_FORCE_DISABLE_GPU=ON `
-          -DCMAKE_MAKE_PROGRAM=ninja
+      - name: Verify CMake version
+        run: cmake --version
+        shell: bash # Using bash for consistency with build commands, pwsh also works
 
-    - name: Build Project
-      shell: pwsh
-      run: cmake --build build --config Release --parallel
+      - name: Configure CMake project
+        # Creates a 'build' directory and runs CMake to generate build files.
+        # On Windows, CMake defaults to a Visual Studio generator.
+        # -A x64 specifies the target architecture.
+        # -DCMAKE_BUILD_TYPE=Release specifies the build configuration.
+        run: |
+          mkdir build
+          cd build
+          cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release
+        shell: bash
 
-    - name: Package Binaries
-      shell: pwsh
-      run: |
-        $date = Get-Date -Format "yyyyMMdd-HHmmss"
-        Compress-Archive -Path "build\bin\Release\*" -DestinationPath "streamline-bin-$date.zip"
+      - name: Build project with CMake
+        # Uses CMake's build tool mode to invoke the underlying build system (MSBuild on Windows).
+        # --config Release specifies the configuration to build.
+        # --parallel leverages multiple CPU cores for faster compilation.
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+        shell: bash
 
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: streamline-binaries
-        path: streamline-bin-*.zip
+      - name: Prepare Artifacts for Upload
+        # This step gathers the built Streamline SDK files into a structured 'artifact' directory.
+        # Output paths are based on Streamline's CMake settings:
+        # - Binaries (DLLs) to build/bin/Release
+        # - Libraries (LIBs) to build/lib/Release
+        # - Headers from plugin_sdk/include
+        run: |
+          $artifactBaseDir = "streamline-sdk" # Top-level directory within the artifact zip
+          $buildDir = "build"
+
+          # Define source paths
+          $releaseBinDir = Join-Path -Path $buildDir -ChildPath "bin\Release"
+          $releaseLibDir = Join-Path -Path $buildDir -ChildPath "lib\Release"
+          $sdkIncludeDir = "plugin_sdk\include" # Public headers
+
+          # Define destination paths within the artifact structure
+          $destBinDir = Join-Path -Path $artifactBaseDir -ChildPath "bin\Release"
+          $destLibDir = Join-Path -Path $artifactBaseDir -ChildPath "lib\Release"
+          $destIncludeDir = Join-Path -Path $artifactBaseDir -ChildPath "include"
+
+          # Create artifact directories
+          New-Item -ItemType Directory -Force -Path $destBinDir
+          New-Item -ItemType Directory -Force -Path $destLibDir
+          New-Item -ItemType Directory -Force -Path $destIncludeDir
+
+          # Copy files
+          if (Test-Path $releaseBinDir) {
+            echo "Copying files from $releaseBinDir to $destBinDir"
+            Copy-Item -Path (Join-Path -Path $releaseBinDir -ChildPath "*") -Destination $destBinDir -Recurse -Force
+          } else {
+            Write-Warning "$releaseBinDir not found. Check build output."
+          }
+
+          if (Test-Path $releaseLibDir) {
+            echo "Copying files from $releaseLibDir to $destLibDir"
+            Copy-Item -Path (Join-Path -Path $releaseLibDir -ChildPath "*") -Destination $destLibDir -Recurse -Force
+          } else {
+            Write-Warning "$releaseLibDir not found. Check build output."
+          }
+
+          if (Test-Path $sdkIncludeDir) {
+            echo "Copying includes from $sdkIncludeDir to $destIncludeDir"
+            Copy-Item -Path $sdkIncludeDir -Destination $destIncludeDir -Recurse -Force
+          } else {
+            Write-Warning "$sdkIncludeDir not found."
+          }
+          
+          # Copy license and readme to the root of the artifact
+          Copy-Item -Path "LICENSE.txt" -Destination (Join-Path -Path $artifactBaseDir -ChildPath "LICENSE.txt") -ErrorAction SilentlyContinue
+          Copy-Item -Path "README.md" -Destination (Join-Path -Path $artifactBaseDir -ChildPath "README.md") -ErrorAction SilentlyContinue
+          
+          echo "Artifact structure prepared in '$artifactBaseDir':"
+          Get-ChildItem -Path $artifactBaseDir -Recurse | Select-Object FullName
+        shell: pwsh
+
+      - name: Upload build artifact
+        # This action uploads the contents of the '$artifactBaseDir' directory created in the previous step.
+        uses: actions/upload-artifact@v4
+        with:
+          name: Streamline-SDK-Windows-x64-Release-${{ github.run_id }} # Artifact name, e.g., Streamline-SDK-Windows-x64-Release-12345
+          path: streamline-sdk/ # Path to the directory to upload
+          if-no-files-found: error # Fails the step if no files are found in the specified path
