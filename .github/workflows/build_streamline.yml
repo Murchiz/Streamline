@@ -12,8 +12,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: List directory contents (optional)
+        run: dir
+
       - name: Run setup
-        run: setup.bat
+        run: scripts/setup.bat
 
       - name: Run build
-        run: build.bat -production
+        run: scripts/build.bat -production
