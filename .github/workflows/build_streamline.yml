@@ -1,22 +1,132 @@
-name: Compile Nvidia Streamline
+name: Compile NVIDIA Streamline
 
 on:
   push:
     branches:
       - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  schedule:
+    # Nightly build for the develop branch
+    - cron: '0 0 * * *' # Runs every day at midnight UTC
 
 jobs:
   build:
+    name: Build Streamline (${{ matrix.config }})
     runs-on: windows-latest
+    strategy:
+      matrix:
+        config: [debug, develop, production] # As per plan: debug, develop, and production configurations [6]
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # Ensure submodule initialization [Plan Sec 1, 2.Job1.1]
 
-      - name: List directory contents (optional)
-        run: dir
+      - name: Install Windows SDK
+        uses: r-lib/actions/setup-windows-toolchain@v2 # A common action for MSVC toolchain, alternatively use specific SDK installer if available or needed.
+        with:
+          # The 'windows-sdk@v1' action mentioned in the plan seems hypothetical or less common.
+          # setup-windows-toolchain sets up MSVC. The SDK version is usually tied to the VS version.
+          # For specific SDK 10.0.19041.0, ensure VS 2022 installation includes it.
+          # GitHub's windows-latest runner typically has a recent VS 2022 with appropriate SDKs.
+          # If a specific SDK installer action is found or created, it can be used here.
+          # For now, we assume the VS 2022 on runner has the required SDK (10.0.19041+). [Plan Sec 1]
+          vs-version: '2022'
 
-      - name: Run setup
-        run: scripts/setup.bat
+      - name: Setup Python for NIS shader compilation (optional)
+        if: success() # Or add a condition based on NIS plugin changes if possible [Plan Sec 1, 5]
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-      - name: Run build
-        run: scripts/build.bat -production
+      - name: Cache external dependencies
+        uses: actions/cache@v4
+        with:
+          path: external/ # Cache external directory [Plan Sec 3]
+          key: ${{ runner.os }}-externals-${{ hashFiles('**/setup.bat') }} # Adjust key as needed
+          restore-keys: |
+            ${{ runner.os }}-externals-
+
+      - name: Run setup.bat
+        run: .\setup.bat
+        shell: cmd # Ensure cmd shell for batch script execution [Plan Sec 2.Job1.3, 3]
+        # Regarding admin privileges for symbolic links: GitHub hosted runners usually allow symlinks.
+        # If setup.bat requires elevation beyond what the runner provides, the script itself needs to handle it,
+        # or a self-hosted runner with appropriate permissions would be necessary. [Plan Sec 1, 3]
+
+      - name: Compile Streamline Solution
+        run: msbuild .\_project\vs2017\streamline.sln /p:Configuration=${{ matrix.config }} /p:Platform=x64
+        # Ensure Visual Studio 2022 tools are in PATH, which setup-windows-toolchain or default env should handle. [Plan Sec 1, 2.Job1.4]
+        # Optimization: Parallel compilation (/m switch for msbuild) could be used if beneficial. [Plan Sec 5]
+
+      - name: Generate SDK package
+        run: .\package.bat -${{ matrix.config }}
+        shell: cmd # [Plan Sec 2.Job1.5]
+        # Ensure package.bat preserves prebuilt sl.dlss_g.dll if necessary. [Plan Sec 3]
+
+      - name: Upload SDK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Streamline-SDK-${{ matrix.config }}-${{ github.run_id }}
+          path: _sdk/ # Upload _sdk directory [Plan Sec 2.Job1.6]
+
+      # Placeholder for Code Signing - requires secrets for the certificate and password [Plan Sec 4]
+      # - name: Sign Binaries
+      #   if: matrix.config == 'production' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      #   run: |
+      #     # Add commands here to sign DLLs in the _sdk directory
+      #     # Example: signtool.exe sign /f ${{ secrets.CODE_SIGNING_CERT }} /p ${{ secrets.CODE_SIGNING_PASSWORD }} /t http://timestamp.digicert.com _sdk\bin\x64\*.dll
+      #   env:
+      #     CODE_SIGNING_CERT_PATH: ${{ secrets.CODE_SIGNING_CERT_PATH }} # Path to PFX file
+      #     CODE_SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+
+  validate:
+    name: Validation Tests
+    needs: build # Depends on completion of Job 1 [Plan Sec 2.Job2]
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        config: [debug, develop, production] # Match build configurations
+
+    steps:
+      - name: Download SDK Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Streamline-SDK-${{ matrix.config }}-${{ github.run_id }} # Ensure this matches the upload name structure
+          path: _sdk_downloaded # Download to a specific directory [Plan Sec 2.Job2.1]
+
+      - name: Run Sanity Checks
+        run: |
+          echo "Performing sanity checks for ${{ matrix.config }} configuration..."
+          if (Test-Path "_sdk_downloaded/bin/x64/sl.interposer.dll") {
+            Write-Host "sl.interposer.dll found."
+          } else {
+            Write-Error "sl.interposer.dll NOT found."
+            exit 1
+          }
+          # Add more checks for other plugin binaries as needed [Plan Sec 2.Job2.2]
+          # Example: Check for DLSS plugin
+          # if (Test-Path "_sdk_downloaded/bin/x64/sl.dlss.dll") {
+          #   Write-Host "sl.dlss.dll found."
+          # } else {
+          #   Write-Error "sl.dlss.dll NOT found."
+          #   exit 1
+          # }
+        shell: pwsh
+
+      - name: Test JSON Configuration Loading (Placeholder)
+        run: |
+          echo "Simulating test of JSON configuration loading..."
+          # This would typically involve running a sample application with specific Streamline configurations.
+          # For example: ./_sdk_downloaded/samples/sample_app.exe --test_config my_config.json
+          # The actual implementation depends on the sample app and test framework. [Plan Sec 2.Job2.3]
+          Write-Host "JSON configuration loading test placeholder executed."
+        shell: pwsh
+
+# Workflow status badges can be added to the README.md as per [Plan Sec 6]
+# Example: [![Compile NVIDIA Streamline](https://github.com/<OWNER>/<REPO>/actions/workflows/compile.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/compile.yml)
