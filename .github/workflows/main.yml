@@ -19,6 +19,7 @@ jobs:
       - name: Set up MSVC (Visual Studio C++ toolset)
         uses: microsoft/setup-msvc@v2
         with:
+         vs-version: 'latest'
           # This action sets up the Developer Command Prompt environment.
           # CMake and Ninja (if bundled with VS) should be available in PATH.
           # vs-version: 'latest' # You can specify a VS version or let it pick the latest.
