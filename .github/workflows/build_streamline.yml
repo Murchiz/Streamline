@@ -1,85 +1,36 @@
-name: Build Nvidia Streamline SDK (Windows x64)
+name: Build and Upload NVIDIA Streamline (Windows x64)
 
 on:
-  workflow_dispatch: # Allows manual triggering from the Actions tab
+  workflow_dispatch:
   push:
     branches:
-      - main # Or your primary development branch if different
-  pull_request:
-    branches:
-      - main # Or your primary development branch if different
+      - main
 
 jobs:
-  build-streamline-windows-x64:
+  build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
-        # If this workflow is in your fork of NVIDIA-RTX/Streamline,
-        # it will check out your fork.
-        # If you want to always build the official NVIDIA repo, uncomment and use:
-        with:
-           repository: NVIDIA-RTX/Streamline
-           ref: main # or a specific tag/commi
-           submodules: 'recursive' # Streamline uses submodules
 
-      - name: Apply CMake patch to Streamline
-        shell: pwsh
-        run: |
-          # Ensure this line ($patchContent = @" ) and the closing "@ line below
-          # have THE EXACT SAME indentation in your YAML file.
-          $patchContent = @"
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
-@@ -122,7 +122,7 @@
- add_custom_target(CopyStreamlineOutputs ALL
-     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/${CMAKE_VS_PLATFORM_NAME}
--    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SL_COMMON_DLL} ${SL_INTERPOSER_DLL} ${SL_PCL_DLL} $<TARGET_FILE_DIR:sl.api>
-+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SL_COMMON_DLL} ${SL_INTERPOSER_DLL} ${SL_PCL_DLL} ${CMAKE_BINARY_DIR}/${CMAKE_VS_PLATFORM_NAME}
-     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SL_COMMON_JSON} ${SL_IMGUI_JSON} ${SL_INTERPOSER_JSON} ${SL_REFLEX_JSON} ${SL_STREAMER_JSON} ${CMAKE_BINARY_DIR}/${CMAKE_VS_PLATFORM_NAME}
-     DEPENDS sl.api
-     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-"@ # <--- THIS LINE IS CRITICAL. No extra spaces before it. Same indentation as '$patchContent = @"' above.
-          $patchContent | Set-Content -Path "streamline_cmake.patch" -Encoding UTF8
-          # Apply the patch to CMakeLists.txt in the root of the checked-out repo
-          git apply --verbose streamline_cmake.patch
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to apply CMake patch. Please ensure the patch content matches the current CMakeLists.txt structure around line 125."
-            exit 1
-          }
-          Remove-Item "streamline_cmake.patch"
-        working-directory: ${{ github.workspace }}
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@v2 # [1, 17]
+      - name: Set up Visual Studio
+        uses: microsoft/setup-msbuild@v1
         with:
-          cmake-version: '3.25.x' # Streamline requires 3.17+
-
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DSLR_SKIP_DOCS=TRUE `
-            -DSLR_SKIP_TESTS=TRUE `
-            -DSL_PRODUCTION=TRUE `
-            -DSL_ENABLE_OTA=FALSE
-        working-directory: ${{ github.workspace }}
+          vs-version: 'latest'
+          vs-installer: true
 
       - name: Build Streamline
-        shell: pwsh
         run: |
-          cmake --build build --config Release --parallel
+          .\build.bat
         working-directory: ${{ github.workspace }}
 
-      - name: Install Streamline (Prepare Artifacts)
-        shell: pwsh
-        run: |
-          cmake --install build --prefix ./streamline_sdk_output --config Release
-        working-directory: ${{ github.workspace }}
-
-      - name: Upload Streamline SDK Artifact
-        uses: actions/upload-artifact@v4 # [3, 5, 15]
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: streamline-sdk-windows-x64-release
-          path: ${{ github.workspace }}/streamline_sdk_output # Path to the directory created by the install step
-          if-no-files-found: error # Fail the workflow if no files were found to upload
+          name: streamline-build
+          path: |
+            ${{ github.workspace }}/bin/x64/Release/*
+            ${{ github.workspace }}/lib/x64/Release/*
+            ${{ github.workspace }}/tools/*
+          retention-days: 30
