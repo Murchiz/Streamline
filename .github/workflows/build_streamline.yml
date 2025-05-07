@@ -18,17 +18,18 @@ jobs:
         uses: microsoft/setup-msbuild@v2
         with:
           vs-version: 'latest'
-          msbuild-architecture: 'x64'
 
       - name: Locate Visual Studio Installation
         run: |
           $ErrorActionPreference = "Stop"
           $vswherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
           if (-Not (Test-Path $vswherePath)) {
-            Write-Error "vswhere.exe not found. Visual Studio might not be installed properly."
-          } else {
-            & $vswherePath -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationPath
+            Write-Error "vswhere.exe not found. Visual Studio 2022 might not be installed."
+            exit 1
           }
+          $vsInstallPath = & $vswherePath -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          Write-Output "VS_INSTALL_PATH=$vsInstallPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
+
       - name: Build Streamline
         run: |
           .\build.bat
