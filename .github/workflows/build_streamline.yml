@@ -30,6 +30,19 @@ jobs:
             & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -version "[16.0,)" -products * -requires Microsoft.VisualStudio.Component.CoreEditor -property installationPath
           }
 
+      - name: Override vswhere.exe with System Version
+        run: |
+          # Ensure that we replace the problematic vswhere.exe in the repository with the working one from Visual Studio
+          $SystemVsWhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          $StreamlineVsWhere = "${{ github.workspace }}\tools\vswhere.exe"
+          
+          if (Test-Path $StreamlineVsWhere) {
+            Write-Host "Replacing incompatible vswhere.exe with system version."
+            Copy-Item -Path $SystemVsWhere -Destination $StreamlineVsWhere -Force
+          } else {
+            Write-Host "vswhere.exe not found in the Streamline tools folder."
+          }
+
       - name: Build Streamline
         run: |
           .\build.bat
