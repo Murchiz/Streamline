@@ -20,29 +20,15 @@ jobs:
           vs-version: 'latest'
           msbuild-architecture: 'x64'
 
-
-      - name: Check Visual Studio Installation
+      - name: Locate Visual Studio Installation
         run: |
           $ErrorActionPreference = "Stop"
-          # Check if vswhere is available and check if Visual Studio is installed
-          if (-not (Test-Path "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe")) {
+          $vswherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-Not (Test-Path $vswherePath)) {
             Write-Error "vswhere.exe not found. Visual Studio might not be installed properly."
           } else {
-            & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -version "[16.0,)" -products * -requires Microsoft.VisualStudio.Component.CoreEditor -property installationPath
+            & $vswherePath -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationPath
           }
-
-      - name: Set VS_PATH using System's vswhere.exe
-        run: |
-          # Using the system's vswhere.exe to set the correct VS_PATH
-          $vswherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
-          $VS_PATH = & $vswherePath -version "[16.0,)" -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationPath
-          if ($VS_PATH) {
-            Write-Host "Visual Studio detected at: $VS_PATH"
-            echo "VS_PATH=$VS_PATH" >> $GITHUB_ENV
-          } else {
-            Write-Error "Visual Studio not found!"
-          }
-
       - name: Build Streamline
         run: |
           .\build.bat
