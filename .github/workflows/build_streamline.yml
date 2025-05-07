@@ -14,15 +14,9 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Visual Studio Build Tools
-        uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: 'latest'
-
-      - name: Locate Visual Studio Installation
+      - name: Verify Visual Studio 2022 Installation
         run: |
-          $ErrorActionPreference = "Stop"
-          $vswherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (-Not (Test-Path $vswherePath)) {
             Write-Error "vswhere.exe not found. Visual Studio 2022 might not be installed."
             exit 1
@@ -30,12 +24,17 @@ jobs:
           $vsInstallPath = & $vswherePath -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           Write-Output "VS_INSTALL_PATH=$vsInstallPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
 
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '17.0'
+
       - name: Build Streamline
         run: |
           .\build.bat
         working-directory: ${{ github.workspace }}
 
-      - name: Upload Build Artifact
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: streamline-build
