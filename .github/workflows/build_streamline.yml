@@ -1,8 +1,10 @@
-name: Build and Upload NVIDIA Streamline (Windows x64)
+name: Build Nvidia Streamline for Windows
 
 on:
-  workflow_dispatch:
   push:
+    branches:
+      - main
+  pull_request:
     branches:
       - main
 
@@ -11,37 +13,40 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    # Step 1: Checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v4.2.2
 
-      - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: 'latest'
+    # Step 2: Set up Python (if required for dependencies)
+    - name: Set up Python 3.x
+      uses: actions/setup-python@v5.6.0
+      with:
+        python-version: '3.x'
 
-      - name: Verify Visual Studio 2022 Installation
-        run: |
-          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-Not (Test-Path $vswherePath)) {
-            Write-Error "vswhere.exe not found. Visual Studio 2022 might not be installed."
-            exit 1
-          }
-          $vsInstallPath = & $vswherePath -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          Write-Output "VS_INSTALL_PATH=$vsInstallPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
+    # Step 3: Install Visual Studio Build Tools (No GPU dependencies)
+    - name: Install Visual Studio Build Tools
+      run: |
+        choco install visualstudio2019buildtools --package-parameters "--includeOptional --allWorkloads --add Microsoft.VisualStudio.Workload.NativeDesktop"
 
-      - name: Build Streamline
-        run: |
-          # Invoke MSBuild directly with the Visual Studio path (avoiding 'call' command)
-          & "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets" /m /t:Build
-        working-directory: ${{ github.workspace }}
+    # Step 4: Install CMake
+    - name: Install CMake
+      run: choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
 
+    # Step 5: Configure build using CMake
+    - name: Configure build using CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 16 2019" -A x64
 
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: streamline-build
-          path: |
-            ${{ github.workspace }}/bin/x64/Release/*
-            ${{ github.workspace }}/lib/x64/Release/*
-            ${{ github.workspace }}/tools/*
-          retention-days: 30
+    # Step 6: Build with MSBuild
+    - name: Build with MSBuild
+      run: |
+        msbuild streamline.sln /p:Configuration=Release /p:Platform=x64
+
+    # Step 7: Upload build artifacts (Optional)
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: streamline-build
+        path: build/Release/
