@@ -15,10 +15,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Visual Studio
-        uses: microsoft/setup-msbuild@v1
+        uses: microsoft/setup-msbuild@v2
         with:
-          vs-version: 'latest'
-          vs-installer: true
+          vs-version: 'latest'  
+          msbuild-architecture: 'x64'
 
       - name: Build Streamline
         run: |
