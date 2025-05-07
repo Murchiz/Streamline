@@ -20,6 +20,16 @@ jobs:
           vs-version: 'latest'  
           msbuild-architecture: 'x64'
 
+      - name: Check Visual Studio Installation
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Check if vswhere is available
+          if (-not (Test-Path "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe")) {
+            Write-Error "vswhere.exe not found. Visual Studio might not be installed properly."
+          } else {
+            & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -version "[16.0,)" -products * -requires Microsoft.VisualStudio.Component.CoreEditor -property installationPath
+          }
+
       - name: Build Streamline
         run: |
           .\build.bat
