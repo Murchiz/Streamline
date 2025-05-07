@@ -20,37 +20,28 @@ jobs:
           vs-version: 'latest'
           msbuild-architecture: 'x64'
 
+
       - name: Check Visual Studio Installation
         run: |
           $ErrorActionPreference = "Stop"
-          # Check if vswhere is available
+          # Check if vswhere is available and check if Visual Studio is installed
           if (-not (Test-Path "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe")) {
             Write-Error "vswhere.exe not found. Visual Studio might not be installed properly."
           } else {
             & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -version "[16.0,)" -products * -requires Microsoft.VisualStudio.Component.CoreEditor -property installationPath
           }
 
-      - name: Override vswhere.exe with System Version
+      - name: Set VS_PATH using System's vswhere.exe
         run: |
-          # Ensure that we replace the problematic vswhere.exe in the repository with the working one from Visual Studio
-          $SystemVsWhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
-          $StreamlineVsWhere = "${{ github.workspace }}\tools\vswhere.exe"
-          
-          if (Test-Path $StreamlineVsWhere) {
-            Write-Host "Replacing incompatible vswhere.exe with system version."
-            Copy-Item -Path $SystemVsWhere -Destination $StreamlineVsWhere -Force
+          # Using the system's vswhere.exe to set the correct VS_PATH
+          $vswherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          $VS_PATH = & $vswherePath -version "[16.0,)" -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationPath
+          if ($VS_PATH) {
+            Write-Host "Visual Studio detected at: $VS_PATH"
+            echo "VS_PATH=$VS_PATH" >> $GITHUB_ENV
           } else {
-            Write-Host "vswhere.exe not found in the Streamline tools folder."
+            Write-Error "Visual Studio not found!"
           }
-
-      - name: Set VS_PATH manually if needed
-        run: |
-          # Check if VS_PATH is set correctly, if not, manually set it.
-          if (-not $env:VS_PATH) {
-            Write-Host "Manually setting VS_PATH to installed Visual Studio path."
-            set VS_PATH="C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-          }
-          Write-Host "VS_PATH is set to: $VS_PATH"
 
       - name: Build Streamline
         run: |
